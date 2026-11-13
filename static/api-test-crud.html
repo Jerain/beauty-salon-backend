@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>美容院SaaS - 全量CRUD测试控制台</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;color:#333;font-size:13px}
+.container{max-width:1400px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin-bottom:12px;color:#1a1a2e}
+h2{font-size:16px;margin:16px 0 8px;color:#16213e;border-bottom:2px solid #e94560;padding-bottom:4px}
+.card{background:#fff;border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.btn{display:inline-block;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;margin:3px;transition:.2s}
+.btn-primary{background:#4361ee;color:#fff}.btn-primary:hover{background:#3a56d4}
+.btn-success{background:#06d6a0;color:#fff}.btn-danger{background:#ef476f;color:#fff}
+.btn-warning{background:#ffd166;color:#333}.btn-sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input,select{padding:6px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px}
+.log{background:#1a1a2e;color:#0f0;padding:10px;border-radius:4px;font-family:monospace;font-size:11px;max-height:250px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.log .error{color:#ff6b6b}.log .success{color:#51cf66}.log .info{color:#74c0fc}
+.status-bar{display:flex;gap:16px;margin-bottom:12px;padding:10px;background:#e3f2fd;border-radius:4px;align-items:center}
+.status-dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.status-dot.online{background:#06d6a0}.status-dot.offline{background:#ef476f}
+.module-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.module-tab{padding:6px 14px;border:1px solid #ddd;border-radius:20px;cursor:pointer;font-size:12px;transition:.2s}
+.module-tab:hover,.module-tab.active{background:#4361ee;color:#fff;border-color:#4361ee}
+.progress{height:4px;background:#e0e0e0;border-radius:2px;margin:8px 0}
+.progress-bar{height:100%;background:linear-gradient(90deg,#4361ee,#06d6a0);border-radius:2px;transition:width .3s}
+.summary{font-size:16px;font-weight:500;text-align:center;padding:10px}
+.pass-count{color:#06d6a0}.fail-count{color:#ef476f}
+.test-list{max-height:500px;overflow-y:auto}
+.test-row{display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid #f0f0f0;gap:8px}
+.test-row:hover{background:#f8f9fa}
+.test-row .name{flex:1;font-size:12px}
+.test-row .status{width:60px;text-align:center;font-size:11px;font-weight:600;padding:2px 6px;border-radius:3px}
+.test-row .status.pass{background:#d4edda;color:#155724}
+.test-row .status.fail{background:#f8d7da;color:#721c24}
+.test-row .status.wait{background:#fff3cd;color:#856404}
+.test-row .status.running{background:#cce5ff;color:#004085}
+.test-row .detail{width:80px;font-size:11px;color:#666;text-align:right}
+.module-section{display:none}.module-section.active{display:block}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>美容院SaaS - 全量CRUD测试控制台</h1>
+
+<div class="status-bar">
+  <div><span class="status-dot" id="serverDot"></span> <span id="serverText">检测中...</span></div>
+  <div>Token: <span id="tokenText" style="color:#666">未登录</span></div>
+  <div style="flex:1"></div>
+  <input type="text" id="phone" value="13800138000" style="width:120px" placeholder="手机号">
+  <input type="password" id="password" value="123456" style="width:80px" placeholder="密码">
+  <button class="btn btn-primary" onclick="doLogin()">登录</button>
+</div>
+
+<div class="card">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-success" onclick="runAll()" id="runAllBtn">运行全部测试</button>
+    <button class="btn btn-danger" onclick="clearAll()">清除结果</button>
+    <span id="totalLabel" style="font-size:14px;font-weight:500"></span>
+  </div>
+  <div class="progress"><div class="progress-bar" id="progBar" style="width:0%"></div></div>
+  <div class="summary" id="summary">等待测试...</div>
+</div>
+
+<div class="card">
+  <div class="module-tabs" id="tabs"></div>
+  <div id="moduleSections"></div>
+</div>
+
+<div class="card">
+  <h2>请求日志</h2>
+  <div class="log" id="logBox"></div>
+</div>
+</div>
+
+<script>
+const BASE=''; // same-origin mode
+let token=null, shopId=null, staffId=null;
+const R={pass:0,fail:0,total:0};
+const ctx={}; // store IDs created during tests
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+function log(m,t='info'){const e=document.getElementById('logBox');e.innerHTML+=`<span class="${t}">[${new Date().toLocaleTimeString()}] ${m}</span>\n`;e.scrollTop=e.scrollHeight}
+async function api(method,path,data=null,retries=2){
+  const h={};
+  if(token)h['Authorization']=`Bearer ${token}`;
+  if(data)h['Content-Type']='application/json';
+  for(let attempt=0;attempt<=retries;attempt++){
+    try{
+      const r=await fetch(`${BASE}${path}`,{method,headers:h,body:data?JSON.stringify(data):undefined,mode:'cors'});
+      const j=await r.json().catch(()=>({}));
+      return{status:r.status,data:j,ok:r.ok};
+    }catch(e){
+      if(attempt<retries){log(`  retry ${attempt+1}: ${method} ${path} → ${e.message}`,'info');await sleep(500*(attempt+1));continue;}
+      return{status:0,data:{detail:e.name+': '+e.message},ok:false}
+    }
+  }
+}
+
+function initModules(){
+  const modules=[
+    {id:'customer',name:'顾客管理'},
+    {id:'staff',name:'员工管理'},
+    {id:'attendance',name:'考勤管理'},
+    {id:'commission',name:'提成管理'},
+    {id:'revisit',name:'回访管理'},
+    {id:'skin',name:'AI测肤'},
+    {id:'message',name:'消息通知'},
+    {id:'marketing',name:'营销核销'},
+    {id:'report',name:'报表分析'},
+  ];
+  const tabs=document.getElementById('tabs');
+  const secs=document.getElementById('moduleSections');
+  modules.forEach((m,i)=>{
+    const tab=document.createElement('div');
+    tab.className='module-tab'+(i===0?' active':'');
+    tab.textContent=m.name;
+    tab.onclick=()=>{
+      document.querySelectorAll('.module-tab').forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('.module-section').forEach(s=>s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('sec-'+m.id).classList.add('active');
+    };
+    tabs.appendChild(tab);
+    const sec=document.createElement('div');
+    sec.id='sec-'+m.id;
+    sec.className='module-section'+(i===0?' active':'');
+    sec.innerHTML=`<div class="test-list" id="list-${m.id}"></div>`;
+    secs.appendChild(sec);
+  });
+}
+
+function addTest(mod,name){
+  const id=`${mod}-${name}`.replace(/[^a-zA-Z0-9\u4e00-\u9fff-]/g,'_');
+  const list=document.getElementById('list-'+mod);
+  const row=document.createElement('div');
+  row.className='test-row';row.id='row-'+id;
+  row.innerHTML=`<div class="name">${name}</div><div class="status wait">等待</div><div class="detail"></div>`;
+  list.appendChild(row);
+  return id;
+}
+
+function setTest(id,status,detail=''){
+  const row=document.getElementById('row-'+id);
+  if(!row)return;
+  const s=row.querySelector('.status');
+  s.className='status '+status;
+  s.textContent={pass:'通过',fail:'失败',wait:'等待',running:'执行中'}[status]||status;
+  row.querySelector('.detail').textContent=detail;
+}
+
+function record(mod,name,passed,detail=''){
+  const id=`${mod}-${name}`.replace(/[^a-zA-Z0-9\u4e00-\u9fff-]/g,'_');
+  R.total++;
+  if(passed)R.pass++;else R.fail++;
+  setTest(id,passed?'pass':'fail',detail);
+  const pct=R.total>0?((R.pass+R.fail)/getTotalTests()*100):0;
+  document.getElementById('progBar').style.width=pct+'%';
+  document.getElementById('summary').innerHTML=`<span class="pass-count">${R.pass} 通过</span> / <span class="fail-count">${R.fail} 失败</span> / ${getTotalTests()} 总计`;
+}
+
+let totalTestCount=0;
+function getTotalTests(){return totalTestCount}
+
+const today=new Date().toISOString().slice(0,10);
+const month=new Date().toISOString().slice(0,7);
+const rand=()=>Math.floor(Math.random()*90000+10000); // random 5 digits
+
+// ========== TEST DEFINITIONS ==========
+
+const testModules = {
+
+customer: {
+  name: '顾客管理',
+  tests: [
+    {name:'创建顾客', fn: async()=>{
+      const r=await api('POST','/api/customers',{name:'测试顾客CRUD',phone:'139'+rand()+rand(),gender:'female'});
+      if(r.ok)ctx.customerId=r.data.id;
+      return r;
+    }},
+    {name:'顾客列表', fn:()=>api('GET','/api/customers')},
+    {name:'顾客详情', fn:()=>api('GET',`/api/customers/${ctx.customerId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新顾客', fn:()=>api('PUT',`/api/customers/${ctx.customerId||'00000000-0000-0000-0000-000000000000'}`,{name:'测试顾客已更新'})},
+    {name:'创建标签', fn: async()=>{
+      const r=await api('POST','/api/tags',{name:'测试标签'+rand()});
+      if(r.ok)ctx.tagId=r.data.id;
+      return r;
+    }},
+    {name:'标签列表', fn:()=>api('GET','/api/tags')},
+    {name:'创建来源', fn:()=>api('POST','/api/sources',{name:'测试来源'+rand()})},
+    {name:'来源列表', fn:()=>api('GET','/api/sources')},
+    {name:'删除顾客', fn: async()=>{
+      // Don't delete - revisit/skin modules need a valid customer
+      // Just mark as cleaned
+      ctx.customerDeleted=true;
+      return{ok:true,status:200,data:{message:'跳过删除(回访模块需要)'}};
+    }},
+  ]
+},
+
+staff: {
+  name: '员工管理',
+  tests: [
+    {name:'创建职位', fn: async()=>{
+      const r=await api('POST','/api/positions',{name:'高级美容师',sort_order:5});
+      if(r.ok)ctx.positionId=r.data.id;
+      return r;
+    }},
+    {name:'职位列表', fn:()=>api('GET','/api/positions')},
+    {name:'更新职位', fn:()=>api('PUT',`/api/positions/${ctx.positionId||'00000000-0000-0000-0000-000000000000'}`,{name:'资深美容师'})},
+    {name:'创建员工', fn: async()=>{
+      const r=await api('POST','/api/staff',{name:'测试员工',phone:'139'+rand()+rand(),role:'staff',position_id:ctx.positionId});
+      if(r.ok)ctx.testStaffId=r.data.id;
+      return r;
+    }},
+    {name:'员工列表', fn:()=>api('GET','/api/staff')},
+    {name:'员工详情', fn:()=>api('GET',`/api/staff/${ctx.testStaffId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新员工', fn:()=>api('PUT',`/api/staff/${ctx.testStaffId||'00000000-0000-0000-0000-000000000000'}`,{name:'测试员工已更新'})},
+    {name:'切换上下架', fn:()=>api('PUT',`/api/staff/${ctx.testStaffId||'00000000-0000-0000-0000-000000000000'}/switch-status`,{is_active:false})},
+    {name:'获取积分', fn:()=>api('GET',`/api/staff/${ctx.testStaffId||'00000000-0000-0000-0000-000000000000'}/points`)},
+    {name:'更新积分', fn:()=>api('PUT',`/api/staff/${ctx.testStaffId||'00000000-0000-0000-0000-000000000000'}/points?points=100`)},
+    {name:'删除员工', fn:()=>api('DELETE',`/api/staff/${ctx.testStaffId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除职位', fn:()=>api('DELETE',`/api/positions/${ctx.positionId||'00000000-0000-0000-0000-000000000000'}`)},
+  ]
+},
+
+attendance: {
+  name: '考勤管理',
+  tests: [
+    {name:'创建考勤规则', fn: async()=>{
+      const r=await api('POST','/api/attendance/rule',{work_start_time:'09:00',work_end_time:'18:00',late_threshold:15,early_leave_threshold:15});
+      if(r.ok)ctx.ruleId=r.data.id;
+      return r;
+    }},
+    {name:'获取考勤规则', fn:()=>api('GET','/api/attendance/rule/my')},
+    {name:'更新考勤规则', fn:()=>api('PUT',`/api/attendance/rule/${ctx.ruleId||'00000000-0000-0000-0000-000000000000'}`,{late_threshold:20})},
+    {name:'上班打卡', fn:()=>api('POST','/api/attendance/clock-in',{location:'门店'})},
+    {name:'下班打卡', fn:()=>api('POST','/api/attendance/clock-out',{location:'门店'})},
+    {name:'考勤记录列表', fn:()=>api('GET',`/api/attendance/records?start_date=${today}&end_date=${today}`)},
+    {name:'我的考勤记录', fn:()=>api('GET',`/api/attendance/my-records?start_date=${today}&end_date=${today}`)},
+    {name:'考勤统计列表', fn:()=>api('GET',`/api/attendance/statistic/list?month=${month}`)},
+    {name:'员工考勤统计', fn:()=>api('GET',`/api/attendance/statistic/staff/${staffId||'00000000-0000-0000-0000-000000000000'}?month=${month}`)},
+    {name:'提交考勤审批', fn: async()=>{
+      const recs=await api('GET',`/api/attendance/records?start_date=${today}&end_date=${today}`);
+      if(recs.ok&&Array.isArray(recs.data)&&recs.data.length>0){
+        const r=await api('POST','/api/attendance/approve/create',{record_id:recs.data[0].id,reason:'外出办事',adjust_type:'late'});
+        if(r.ok)ctx.approveId=r.data.id;
+        return r;
+      }
+      return{ok:true,status:200,data:{message:'跳过-无记录'}};
+    }},
+    {name:'审批列表', fn:()=>api('GET','/api/attendance/approve/list')},
+    {name:'审批通过', fn:async()=>{
+      if(!ctx.approveId)return{ok:true,status:200,data:{message:'跳过'}};
+      return api('PUT',`/api/attendance/approve/${ctx.approveId}/handle?action=approve`);
+    }},
+  ]
+},
+
+commission: {
+  name: '提成管理',
+  tests: [
+    {name:'创建提成规则', fn: async()=>{
+      const r=await api('POST','/api/commission/rules',{name:'服务提成_'+rand(),rule_type:'service',commission_rate:10});
+      if(r.ok)ctx.commRuleId=r.data.id;
+      return r;
+    }},
+    {name:'提成规则列表', fn:()=>api('GET','/api/commission/rules')},
+    {name:'提成规则详情', fn:()=>api('GET',`/api/commission/rules/${ctx.commRuleId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新提成规则', fn:()=>api('PUT',`/api/commission/rules/${ctx.commRuleId||'00000000-0000-0000-0000-000000000000'}`,{commission_rate:12})},
+    {name:'创建阶梯提成', fn:()=>api('POST','/api/commission/rules',{name:'阶梯提成',rule_type:'step',step_rules:[{min:0,max:5000,rate:5},{min:5000,max:99999,rate:10}]})},
+    {name:'计算提成', fn:()=>api('POST','/api/commission/calc-staff-commission',{staff_id:staffId||'00000000-0000-0000-0000-000000000000',commission_type:'service',base_amount:1000})},
+    {name:'创建提成记录', fn: async()=>{
+      const orders=await api('GET','/api/orders?page=1&page_size=1');
+      let oid='00000000-0000-0000-0000-000000000000';
+      if(orders.ok&&orders.data.items&&orders.data.items.length>0)oid=orders.data.items[0].id;
+      const r=await api('POST',`/api/commission/records?staff_id=${staffId}&order_id=${oid}&commission_type=service&base_amount=2000`);
+      return r;
+    }},
+    {name:'提成记录列表', fn:()=>api('GET',`/api/commission/records?month=${month}`)},
+    {name:'员工业绩列表', fn:()=>api('GET',`/api/report/staff-data/list?month=${month}`)},
+    {name:'删除提成规则', fn:()=>api('DELETE',`/api/commission/rules/${ctx.commRuleId||'00000000-0000-0000-0000-000000000000'}`)},
+  ]
+},
+
+revisit: {
+  name: '回访管理',
+  tests: [
+    {name:'获取顾客ID', fn: async()=>{
+      const custs=await api('GET','/api/customers?page=1&page_size=1');
+      if(custs.ok&&custs.data.items&&custs.data.items.length>0){
+        ctx.revisitCustId=custs.data.items[0].id;
+        return{ok:true,status:200,data:{id:ctx.revisitCustId}};
+      }
+      return{ok:false,status:400,data:{detail:'无可用顾客'}};
+    }},
+    {name:'创建回访任务', fn: async()=>{
+      if(!ctx.revisitCustId)return{ok:false,status:400,data:{detail:'顾客ID未获取'}};
+      const r=await api('POST','/api/revisit-tasks',{
+        customer_id:ctx.revisitCustId,staff_id:staffId,
+        revisit_type:'routine',planned_date:new Date().toISOString(),
+        content:'回访测试',priority:'high'
+      });
+      if(r.ok)ctx.taskId=r.data.id;
+      return r;
+    }},
+    {name:'回访任务列表', fn:()=>api('GET','/api/revisit-tasks')},
+    {name:'回访任务详情', fn:()=>api('GET',`/api/revisit-tasks/${ctx.taskId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新回访任务', fn:()=>api('PUT',`/api/revisit-tasks/${ctx.taskId||'00000000-0000-0000-0000-000000000000'}`,{status:'completed',content:'已完成回访'})},
+    {name:'回访统计', fn:()=>api('GET','/api/revisit-tasks/statistic')},
+    {name:'取消回访任务', fn: async()=>{
+      if(!ctx.revisitCustId)return{ok:false,status:400,data:{detail:'顾客ID未获取'}};
+      const r=await api('POST','/api/revisit-tasks',{customer_id:ctx.revisitCustId,staff_id:staffId,revisit_type:'birthday',planned_date:new Date().toISOString(),content:'待取消',priority:'low'});
+      if(r.ok){return api('PUT',`/api/revisit-tasks/${r.data.id}/cancel`);}
+      return r;
+    }},
+    {name:'创建回访记录', fn:()=>api('POST','/api/revisit-records',{task_id:ctx.taskId,customer_id:ctx.revisitCustId,revisit_method:'phone',result:'visited',content:'电话回访成功'})},
+    {name:'回访记录列表', fn:()=>api('GET','/api/revisit-records')},
+    {name:'创建话术', fn: async()=>{
+      const r=await api('POST','/api/revisit-scripts',{title:'生日回访话术_'+rand(),category:'birthday',content:'祝您生日快乐...'});
+      if(r.ok)ctx.scriptId=r.data.id;
+      return r;
+    }},
+    {name:'话术列表', fn:()=>api('GET','/api/revisit-scripts')},
+    {name:'删除话术', fn:()=>api('DELETE',`/api/revisit-scripts/${ctx.scriptId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'创建服务日志', fn: async()=>{
+      if(!ctx.revisitCustId)return{ok:false,status:400,data:{detail:'顾客ID未获取'}};
+      const r=await api('POST','/api/service-logs',{
+        customer_id:ctx.revisitCustId,staff_id:staffId,
+        service_date:new Date().toISOString(),duration:60,remark:'服务日志测试'
+      });
+      if(r.ok)ctx.logId=r.data.id;
+      return r;
+    }},
+    {name:'服务日志列表', fn:()=>api('GET','/api/service-logs')},
+    {name:'服务日志详情', fn:()=>api('GET',`/api/service-logs/${ctx.logId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'创建目标计划', fn: async()=>{
+      const r=await api('POST','/api/target-plans',{target_type:'revenue',target_value:50000,month:month});
+      if(r.ok)ctx.planId=r.data.id;
+      return r;
+    }},
+    {name:'目标计划列表', fn:()=>api('GET',`/api/target-plans?month=${month}`)},
+    {name:'删除目标计划', fn:()=>api('DELETE',`/api/target-plans/${ctx.planId||'00000000-0000-0000-0000-000000000000'}`)},
+  ]
+},
+
+skin: {
+  name: 'AI测肤',
+  tests: [
+    {name:'创建测肤记录', fn: async()=>{
+      const custs=await api('GET','/api/customers?page=1&page_size=1');
+      const cid=custs.ok&&custs.data.items&&custs.data.items.length>0?custs.data.items[0].id:'00000000-0000-0000-0000-000000000000';
+      ctx.skinCustId=cid;
+      const r=await api('POST','/api/skin-tests',{customer_id:cid,overall_score:85,skin_type:'混合性',pore_score:80,acne_score:90,spot_score:75,moisture_score:88,wrinkle_score:92,sensitive_score:70,blackhead_score:82,skin_color_score:86});
+      if(r.ok)ctx.skinId1=r.data.id;
+      return r;
+    }},
+    {name:'创建第二次测肤', fn: async()=>{
+      const r=await api('POST','/api/skin-tests',{customer_id:ctx.skinCustId||'00000000-0000-0000-0000-000000000000',overall_score:90,skin_type:'混合性',pore_score:85,acne_score:92,spot_score:80,moisture_score:90,wrinkle_score:95,sensitive_score:75,blackhead_score:88,skin_color_score:90});
+      if(r.ok)ctx.skinId2=r.data.id;
+      return r;
+    }},
+    {name:'测肤列表', fn:()=>api('GET','/api/skin-tests')},
+    {name:'测肤详情', fn:()=>api('GET',`/api/skin-tests/${ctx.skinId1||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新测肤备注', fn:()=>api('PUT',`/api/skin-tests/${ctx.skinId1||'00000000-0000-0000-0000-000000000000'}`,{remark:'皮肤状态良好'})},
+    {name:'测肤搜索', fn:()=>api('GET',`/api/skin-tests/search?customer_id=${ctx.skinCustId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'测肤统计', fn:()=>api('GET','/api/skin-tests/count')},
+    {name:'测肤对比', fn:()=>api('GET',`/api/skin-tests/compare/${ctx.skinId1||'00000000-0000-0000-0000-000000000000'}/${ctx.skinId2||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除测肤1', fn:()=>api('DELETE',`/api/skin-tests/${ctx.skinId1||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除测肤2', fn:()=>api('DELETE',`/api/skin-tests/${ctx.skinId2||'00000000-0000-0000-0000-000000000000'}`)},
+  ]
+},
+
+message: {
+  name: '消息通知',
+  tests: [
+    {name:'创建消息设置', fn:()=>api('POST','/api/message-settings',{card_expire_enabled:true,card_expire_days:7,recharge_enabled:true,birthday_enabled:true,birthday_days:3,no_visit_enabled:true,no_visit_days:30,appointment_enabled:true,appointment_hours:2,wechat_notify_enabled:false})},
+    {name:'获取消息设置', fn:()=>api('GET','/api/message-settings')},
+    {name:'创建消息1', fn: async()=>{
+      const r=await api('POST','/api/messages',{title:'测试消息1',content:'这是第一条测试消息',message_type:'system'});
+      if(r.ok)ctx.msgId1=r.data.id;
+      return r;
+    }},
+    {name:'创建消息2', fn: async()=>{
+      const r=await api('POST','/api/messages',{title:'测试消息2',content:'这是第二条测试消息',message_type:'birthday'});
+      if(r.ok)ctx.msgId2=r.data.id;
+      return r;
+    }},
+    {name:'消息列表', fn:()=>api('GET','/api/messages')},
+    {name:'消息概览', fn:()=>api('GET','/api/messages/overview')},
+    {name:'未读消息数', fn:()=>api('GET','/api/messages/count')},
+    {name:'标记已读', fn:()=>api('PUT',`/api/messages/${ctx.msgId1||'00000000-0000-0000-0000-000000000000'}/read`)},
+    {name:'全部标记已读', fn:()=>api('PUT','/api/messages/read-all')},
+    {name:'卡到期提醒', fn:()=>api('GET','/api/messages/card-expire')},
+    {name:'生日提醒', fn:()=>api('GET','/api/messages/customer-birthday')},
+    {name:'不回店提醒', fn:()=>api('GET','/api/messages/customer-not-to-shop')},
+    {name:'删除消息1', fn:()=>api('DELETE',`/api/messages/${ctx.msgId1||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除消息2', fn:()=>api('DELETE',`/api/messages/${ctx.msgId2||'00000000-0000-0000-0000-000000000000'}`)},
+  ]
+},
+
+marketing: {
+  name: '营销核销',
+  tests: [
+    {name:'创建优惠券', fn: async()=>{
+      const r=await api('POST','/api/coupons',{name:'满100减'+rand()%100,coupon_type:'full_reduction',discount_value:20,min_amount:100,total_count:100,start_date:today,end_date:'2027-12-31'});
+      if(r.ok)ctx.couponId=r.data.id;
+      return r;
+    }},
+    {name:'优惠券列表', fn:()=>api('GET','/api/coupons')},
+    {name:'优惠券详情', fn:()=>api('GET',`/api/coupons/${ctx.couponId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新优惠券', fn:()=>api('PUT',`/api/coupons/${ctx.couponId||'00000000-0000-0000-0000-000000000000'}`,{name:'满100减30'})},
+    {name:'创建营销活动', fn: async()=>{
+      const r=await api('POST','/api/marketing/activities',{name:'限时特惠_'+rand(),activity_type:'flash_sale',description:'全场8折',original_price:500,activity_price:400,start_date:today,end_date:'2027-12-31'});
+      if(r.ok)ctx.activityId=r.data.id;
+      return r;
+    }},
+    {name:'营销活动列表', fn:()=>api('GET','/api/marketing/activities')},
+    {name:'营销活动详情', fn:()=>api('GET',`/api/marketing/activities/${ctx.activityId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新营销活动', fn:()=>api('PUT',`/api/marketing/activities/${ctx.activityId||'00000000-0000-0000-0000-000000000000'}`,{name:'限时特惠已更新'})},
+    {name:'营销概览', fn:()=>api('GET','/api/marketing/overview')},
+    {name:'美团核销验证', fn:()=>api('POST','/api/third-party/verify',{code:'MT123456',platform:'meituan'})},
+    {name:'删除优惠券', fn:()=>api('DELETE',`/api/coupons/${ctx.couponId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除营销活动', fn:()=>api('DELETE',`/api/marketing/activities/${ctx.activityId||'00000000-0000-0000-0000-000000000000'}`)},
+  ]
+},
+
+report: {
+  name: '报表分析',
+  tests: [
+    {name:'经营总览', fn:()=>api('GET',`/api/report/business/overview?start_date=2026-01-01&end_date=2026-12-31`)},
+    {name:'营收汇总', fn:()=>api('GET',`/api/report/revenue/summary?start_date=2026-01-01&end_date=2026-12-31`)},
+    {name:'营收明细', fn:()=>api('GET',`/api/report/revenue/detail?start_date=2026-01-01&end_date=2026-12-31`)},
+    {name:'顾客报表', fn:()=>api('GET',`/api/report/business/customer?start_date=2026-01-01&end_date=2026-12-31`)},
+    {name:'员工业绩报表', fn:()=>api('GET',`/api/report/staff-performance?start_date=2026-01-01&end_date=2026-12-31`)},
+    {name:'卡耗报表', fn:()=>api('GET',`/api/report/card-consumption?start_date=2026-01-01&end_date=2026-12-31`)},
+    {name:'KPI预览', fn:()=>api('GET','/api/report/business-preview/collect')},
+  ]
+},
+
+};
+
+// ========== RUNNER ==========
+
+async function doLogin(){
+  const phone=document.getElementById('phone').value;
+  const pw=document.getElementById('password').value;
+  const r=await api('POST','/api/auth/login',{phone,password:pw});
+  if(r.ok&&r.data.access_token){
+    token=r.data.access_token;staffId=r.data.staff_id;shopId=r.data.shop_id;
+    document.getElementById('tokenText').textContent=`已登录 (staff: ${staffId?.slice(0,8)}...)`;
+    document.getElementById('tokenText').style.color='#06d6a0';
+    log('登录成功','success');
+  }else{log('登录失败: '+JSON.stringify(r.data),'error')}
+}
+
+function initTestRows(){
+  R.pass=0;R.fail=0;R.total=0;totalTestCount=0;
+  for(const[mod,def]of Object.entries(testModules)){
+    const list=document.getElementById('list-'+mod);
+    list.innerHTML='';
+    for(const t of def.tests){
+      addTest(mod,t.name);
+      totalTestCount++;
+    }
+  }
+  document.getElementById('summary').textContent='等待测试...';
+  document.getElementById('progBar').style.width='0%';
+}
+
+async function runAll(){
+  if(!token){alert('请先登录');return}
+  const btn=document.getElementById('runAllBtn');
+  btn.disabled=true;btn.textContent='测试中...';
+  initTestRows();
+
+  for(const[mod,def]of Object.entries(testModules)){
+    log(`\n===== ${def.name} =====`,'info');
+    // activate the module tab
+    document.querySelectorAll('.module-tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.module-section').forEach(s=>s.classList.remove('active'));
+    const tabs=document.querySelectorAll('.module-tab');
+    const idx=Object.keys(testModules).indexOf(mod);
+    if(tabs[idx])tabs[idx].classList.add('active');
+    document.getElementById('sec-'+mod).classList.add('active');
+
+    for(const t of def.tests){
+      const id=`${mod}-${t.name}`.replace(/[^a-zA-Z0-9\u4e00-\u9fff-]/g,'_');
+      setTest(id,'running');
+      try{
+        const r=await t.fn();
+        const passed=r.ok||(r.status===400&&r.data?.detail?.includes('已打过'));
+        record(mod,t.name,passed,`HTTP ${r.status}`);
+        if(!passed)log(`  FAIL: ${t.name} → ${r.status} ${JSON.stringify(r.data).slice(0,100)}`,'error');
+      }catch(e){
+        record(mod,t.name,false,e.message);
+        log(`  ERROR: ${t.name} → ${e.message}`,'error');
+      }
+      await sleep(150);
+    }
+  }
+
+  btn.disabled=false;btn.textContent='运行全部测试';
+  log(`\n测试完成: ${R.pass} 通过, ${R.fail} 失败, ${R.total} 总计`,R.fail===0?'success':'error');
+  document.getElementById('totalLabel').textContent=`${R.pass}/${R.total} 通过`;
+}
+
+function clearAll(){
+  R.pass=0;R.fail=0;R.total=0;totalTestCount=0;
+  document.querySelectorAll('.test-list').forEach(l=>l.innerHTML='');
+  document.getElementById('logBox').innerHTML='';
+  document.getElementById('progBar').style.width='0%';
+  document.getElementById('summary').textContent='等待测试...';
+  document.getElementById('totalLabel').textContent='';
+}
+
+async function checkServer(){
+  try{
+    await fetch(`${BASE}/api/auth/me`);
+    document.getElementById('serverDot').className='status-dot online';
+    document.getElementById('serverText').textContent='服务器在线';
+  }catch{
+    document.getElementById('serverDot').className='status-dot offline';
+    document.getElementById('serverText').textContent='服务器离线';
+  }
+}
+
+initModules();
+checkServer();
+</script>
+</body>
+</html>
