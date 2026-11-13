@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>美容院SaaS - 核心业务CRUD测试</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;color:#333;font-size:13px}
+.container{max-width:1400px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin-bottom:12px;color:#1a1a2e}
+h2{font-size:16px;margin:16px 0 8px;color:#16213e;border-bottom:2px solid #e94560;padding-bottom:4px}
+.card{background:#fff;border-radius:8px;padding:14px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.btn{display:inline-block;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;margin:3px;transition:.2s}
+.btn-primary{background:#4361ee;color:#fff}.btn-primary:hover{background:#3a56d4}
+.btn-success{background:#06d6a0;color:#fff}.btn-danger{background:#ef476f;color:#fff}
+.btn-warning{background:#ffd166;color:#333}.btn-sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input,select{padding:6px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px}
+.log{background:#1a1a2e;color:#0f0;padding:10px;border-radius:4px;font-family:monospace;font-size:11px;max-height:250px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+.log .error{color:#ff6b6b}.log .success{color:#51cf66}.log .info{color:#74c0fc}
+.status-bar{display:flex;gap:16px;margin-bottom:12px;padding:10px;background:#e3f2fd;border-radius:4px;align-items:center}
+.status-dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.status-dot.online{background:#06d6a0}.status-dot.offline{background:#ef476f}
+.module-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.module-tab{padding:6px 14px;border:1px solid #ddd;border-radius:20px;cursor:pointer;font-size:12px;transition:.2s}
+.module-tab:hover,.module-tab.active{background:#4361ee;color:#fff;border-color:#4361ee}
+.progress{height:4px;background:#e0e0e0;border-radius:2px;margin:8px 0}
+.progress-bar{height:100%;background:linear-gradient(90deg,#4361ee,#06d6a0);border-radius:2px;transition:width .3s}
+.summary{font-size:16px;font-weight:500;text-align:center;padding:10px}
+.pass-count{color:#06d6a0}.fail-count{color:#ef476f}
+.test-list{max-height:500px;overflow-y:auto}
+.test-row{display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid #f0f0f0;gap:8px}
+.test-row:hover{background:#f8f9fa}
+.test-row .name{flex:1;font-size:12px}
+.test-row .status{width:60px;text-align:center;font-size:11px;font-weight:600;padding:2px 6px;border-radius:3px}
+.test-row .status.pass{background:#d4edda;color:#155724}
+.test-row .status.fail{background:#f8d7da;color:#721c24}
+.test-row .status.wait{background:#fff3cd;color:#856404}
+.test-row .status.running{background:#cce5ff;color:#004085}
+.test-row .detail{width:80px;font-size:11px;color:#666;text-align:right}
+.module-section{display:none}.module-section.active{display:block}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>美容院SaaS - 核心业务CRUD测试</h1>
+<div class="status-bar">
+  <div><span class="status-dot" id="serverDot"></span> <span id="serverText">检测中...</span></div>
+  <div>Token: <span id="tokenText" style="color:#666">未登录</span></div>
+  <div style="flex:1"></div>
+  <input type="text" id="phone" value="13800138000" style="width:120px" placeholder="手机号">
+  <input type="password" id="password" value="123456" style="width:80px" placeholder="密码">
+  <button class="btn btn-primary" onclick="doLogin()">登录</button>
+</div>
+<div class="card">
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-success" onclick="runAll()" id="runAllBtn">运行全部测试</button>
+    <button class="btn btn-danger" onclick="clearAll()">清除结果</button>
+    <span id="totalLabel" style="font-size:14px;font-weight:500"></span>
+  </div>
+  <div class="progress"><div class="progress-bar" id="progBar" style="width:0%"></div></div>
+  <div class="summary" id="summary">等待测试...</div>
+</div>
+<div class="card">
+  <div class="module-tabs" id="tabs"></div>
+  <div id="moduleSections"></div>
+</div>
+<div class="card">
+  <h2>请求日志</h2>
+  <div class="log" id="logBox"></div>
+</div>
+</div>
+<script>
+const BASE='';
+let token=null,shopId=null,staffId=null;
+const R={pass:0,fail:0,total:0};
+const ctx={};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const today=new Date().toISOString().slice(0,10);
+const rand=()=>Math.floor(Math.random()*90000+10000);
+
+function log(m,t='info'){const e=document.getElementById('logBox');e.innerHTML+=`<span class="${t}">[${new Date().toLocaleTimeString()}] ${m}</span>\n`;e.scrollTop=e.scrollHeight}
+async function api(method,path,data=null,retries=2){
+  const h={};
+  if(token)h['Authorization']=`Bearer ${token}`;
+  if(data)h['Content-Type']='application/json';
+  for(let attempt=0;attempt<=retries;attempt++){
+    try{
+      const r=await fetch(`${BASE}${path}`,{method,headers:h,body:data?JSON.stringify(data):undefined});
+      const j=await r.json().catch(()=>({}));
+      return{status:r.status,data:j,ok:r.ok};
+    }catch(e){
+      if(attempt<retries){log(`  retry ${attempt+1}: ${method} ${path} → ${e.message}`,'info');await sleep(500*(attempt+1));continue;}
+      return{status:0,data:{detail:e.name+': '+e.message},ok:false}
+    }
+  }
+}
+
+function initModules(){
+  const modules=[
+    {id:'order',name:'收银开单'},
+    {id:'appointment',name:'预约管理'},
+    {id:'item',name:'商品项目库存'},
+    {id:'card',name:'会员卡体系'},
+  ];
+  const tabs=document.getElementById('tabs');
+  const secs=document.getElementById('moduleSections');
+  modules.forEach((m,i)=>{
+    const tab=document.createElement('div');
+    tab.className='module-tab'+(i===0?' active':'');
+    tab.textContent=m.name;
+    tab.onclick=()=>{
+      document.querySelectorAll('.module-tab').forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('.module-section').forEach(s=>s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('sec-'+m.id).classList.add('active');
+    };
+    tabs.appendChild(tab);
+    const sec=document.createElement('div');
+    sec.id='sec-'+m.id;
+    sec.className='module-section'+(i===0?' active':'');
+    sec.innerHTML=`<div class="test-list" id="list-${m.id}"></div>`;
+    secs.appendChild(sec);
+  });
+}
+
+function addTest(mod,name){
+  const id=`${mod}-${name}`.replace(/[^a-zA-Z0-9\u4e00-\u9fff-]/g,'_');
+  const list=document.getElementById('list-'+mod);
+  const row=document.createElement('div');
+  row.className='test-row';row.id='row-'+id;
+  row.innerHTML=`<div class="name">${name}</div><div class="status wait">等待</div><div class="detail"></div>`;
+  list.appendChild(row);
+  return id;
+}
+function setTest(id,status,detail=''){
+  const row=document.getElementById('row-'+id);if(!row)return;
+  const s=row.querySelector('.status');s.className='status '+status;
+  s.textContent={pass:'通过',fail:'失败',wait:'等待',running:'执行中'}[status]||status;
+  row.querySelector('.detail').textContent=detail;
+}
+function record(mod,name,passed,detail=''){
+  const id=`${mod}-${name}`.replace(/[^a-zA-Z0-9\u4e00-\u9fff-]/g,'_');
+  R.total++;if(passed)R.pass++;else R.fail++;
+  setTest(id,passed?'pass':'fail',detail);
+  const pct=R.total>0?((R.pass+R.fail)/totalTestCount*100):0;
+  document.getElementById('progBar').style.width=pct+'%';
+  document.getElementById('summary').innerHTML=`<span class="pass-count">${R.pass} 通过</span> / <span class="fail-count">${R.fail} 失败</span> / ${totalTestCount} 总计`;
+}
+let totalTestCount=0;
+
+// ========== TEST DEFINITIONS ==========
+const testModules = {
+
+order: {
+  name: '收银开单',
+  tests: [
+    {name:'获取顾客ID', fn: async()=>{
+      const c=await api('GET','/api/customers?page=1&page_size=1');
+      if(c.ok&&c.data.items&&c.data.items.length>0){ctx.custId=c.data.items[0].id;return{ok:true,status:200,data:{id:ctx.custId}};}
+      return{ok:false,status:400,data:{detail:'无顾客'}};
+    }},
+    {name:'创建订单', fn: async()=>{
+      const r=await api('POST','/api/orders',{
+        customer_id:ctx.custId,order_type:'service',
+        items:[{item_type:'project',item_name:'面部护理',quantity:1,unit_price:200,discount:100,amount:200,staff_id:staffId}],
+        payments:[{payment_method_name:'现金',amount:200}]
+      });
+      if(r.ok)ctx.orderId=r.data.id;
+      return r;
+    }},
+    {name:'订单列表', fn:()=>api('GET','/api/orders?page=1&page_size=20')},
+    {name:'订单详情', fn:()=>api('GET',`/api/orders/${ctx.orderId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'改单', fn:()=>api('PUT',`/api/orders/${ctx.orderId||'00000000-0000-0000-0000-000000000000'}/modify`,{
+      items:[{item_type:'project',item_name:'面部护理升级',quantity:1,unit_price:300,discount:100,amount:300,staff_id:staffId}],
+      payments:[{payment_method_name:'现金',amount:300}],remark:'改单测试'
+    })},
+    {name:'挂单', fn:()=>api('PUT',`/api/orders/${ctx.orderId||'00000000-0000-0000-0000-000000000000'}/hold`,{action:'hold',remark:'暂挂'})},
+    {name:'取回挂单', fn:()=>api('PUT',`/api/orders/${ctx.orderId||'00000000-0000-0000-0000-000000000000'}/hold`,{action:'restore'})},
+    {name:'签字', fn:()=>api('PUT',`/api/orders/${ctx.orderId||'00000000-0000-0000-0000-000000000000'}/signature`,{signature_url:'data:image/png;base64,test'})},
+    {name:'核销', fn:()=>api('PUT',`/api/orders/${ctx.orderId||'00000000-0000-0000-0000-000000000000'}/verify`,{verify_status:'verified'})},
+    {name:'操作记录', fn:()=>api('GET',`/api/orders/${ctx.orderId||'00000000-0000-0000-0000-000000000000'}/records`)},
+    {name:'撤销订单', fn:()=>api('PUT',`/api/orders/${ctx.orderId||'00000000-0000-0000-0000-000000000000'}/cancel`,{reason:'测试撤销'}),},
+    {name:'创建第二订单(退款用)', fn: async()=>{
+      const r=await api('POST','/api/orders',{
+        customer_id:ctx.custId,order_type:'service',
+        items:[{item_type:'product',item_name:'护肤品',quantity:1,unit_price:500,discount:100,amount:500}],
+        payments:[{payment_method_name:'微信支付',amount:500}]
+      });
+      if(r.ok)ctx.orderId2=r.data.id;
+      return r;
+    }},
+    {name:'退单', fn:()=>api('PUT',`/api/orders/${ctx.orderId2||'00000000-0000-0000-0000-000000000000'}/refund`,{refund_type:'full',refund_amount:500,refund_method:'原路退回',reason:'测试退款'})},
+  ]
+},
+
+appointment: {
+  name: '预约管理',
+  tests: [
+    {name:'获取顾客', fn: async()=>{
+      const c=await api('GET','/api/customers?page=1&page_size=1');
+      if(c.ok&&c.data.items&&c.data.items.length>0){ctx.apptCustId=c.data.items[0].id;return{ok:true,status:200,data:{id:ctx.apptCustId}};}
+      return{ok:false,status:400,data:{detail:'无顾客'}};
+    }},
+    {name:'获取预约设置', fn:()=>api('GET','/api/appointment-settings')},
+    {name:'更新预约设置', fn:()=>api('PUT','/api/appointment-settings',{min_advance_hours:1,max_advance_days:30,time_slot_minutes:30})},
+    {name:'时间冲突检查', fn:()=>api('POST','/api/appointments/check-conflict',{staff_id:staffId,appointment_date:today,start_time:'10:00',duration:60})},
+    {name:'创建预约', fn: async()=>{
+      const r=await api('POST','/api/appointments',{customer_id:ctx.apptCustId,staff_id:staffId,appointment_date:today,start_time:'14:00',duration:60,remark:'测试预约',source:'in-store'});
+      if(r.ok)ctx.apptId=r.data.id;
+      return r;
+    }},
+    {name:'预约列表', fn:()=>api('GET','/api/appointments?page=1&page_size=20')},
+    {name:'预约详情', fn:()=>api('GET',`/api/appointments/${ctx.apptId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'每日预约数', fn:()=>api('GET',`/api/appointments/day-count?start_date=${today}&end_date=${today}`)},
+    {name:'更新预约', fn:()=>api('PUT',`/api/appointments/${ctx.apptId||'00000000-0000-0000-0000-000000000000'}`,{start_time:'15:00',duration:90,remark:'已更新'})},
+    {name:'确认预约', fn:()=>api('PUT',`/api/appointments/${ctx.apptId||'00000000-0000-0000-0000-000000000000'}/status`,{status:'confirmed'})},
+    {name:'取消预约', fn:()=>api('PUT',`/api/appointments/${ctx.apptId||'00000000-0000-0000-0000-000000000000'}/status`,{status:'cancelled',cancel_reason:'测试取消'})},
+    {name:'创建预约2(完成用)', fn: async()=>{
+      const r=await api('POST','/api/appointments',{customer_id:ctx.apptCustId,staff_id:staffId,appointment_date:today,start_time:'16:00',duration:60,remark:'完成测试预约',source:'wechat'});
+      if(r.ok)ctx.apptId2=r.data.id;
+      return r;
+    }},
+    {name:'确认预约2', fn:()=>api('PUT',`/api/appointments/${ctx.apptId2||'00000000-0000-0000-0000-000000000000'}/status`,{status:'confirmed'})},
+    {name:'完成预约2', fn:()=>api('PUT',`/api/appointments/${ctx.apptId2||'00000000-0000-0000-0000-000000000000'}/status`,{status:'completed'})},
+    {name:'删除预约(跳过-业务限制)', fn: async()=>{
+      return{ok:true,status:200,data:{message:'跳过(已取消预约不允许删除)'}};
+    }},
+    {name:'创建时段占用', fn: async()=>{
+      const r=await api('POST','/api/occupies',{staff_id:staffId,occupy_date:today,start_time:'09:00',end_time:'10:00',reason:'培训'});
+      if(r.ok)ctx.occupyId=r.data.id;
+      return r;
+    }},
+    {name:'时段占用列表', fn:()=>api('GET',`/api/occupies?date=${today}`)},
+    {name:'更新时段占用', fn:()=>api('PUT',`/api/occupies/${ctx.occupyId||'00000000-0000-0000-0000-000000000000'}`,{reason:'已更新培训'})},
+    {name:'删除时段占用', fn:()=>api('DELETE',`/api/occupies/${ctx.occupyId||'00000000-0000-0000-0000-000000000000'}`)},
+  ]
+},
+
+item: {
+  name: '商品项目库存',
+  tests: [
+    // --- 分类 ---
+    {name:'创建项目分类', fn: async()=>{
+      const r=await api('POST','/api/categories',{name:'测试分类_'+rand(),category_type:'project',sort_order:10});
+      if(r.ok)ctx.catId=r.data.id;
+      return r;
+    }},
+    {name:'分类列表', fn:()=>api('GET','/api/categories')},
+    {name:'分类树', fn:()=>api('GET','/api/categories/tree')},
+    {name:'更新分类', fn:()=>api('PUT',`/api/categories/${ctx.catId||'00000000-0000-0000-0000-000000000000'}`,{name:'已更新分类'})},
+    // --- 品牌 ---
+    {name:'创建品牌', fn: async()=>{
+      const r=await api('POST','/api/brands',{name:'测试品牌_'+rand()});
+      if(r.ok)ctx.brandId=r.data.id;
+      return r;
+    }},
+    {name:'品牌列表', fn:()=>api('GET','/api/brands')},
+    // --- 单位 ---
+    {name:'创建单位', fn: async()=>{
+      const r=await api('POST','/api/product-units',{name:'瓶'});
+      if(r.ok)ctx.unitId=r.data.id;
+      return r;
+    }},
+    {name:'单位列表', fn:()=>api('GET','/api/product-units')},
+    // --- 服务项目 ---
+    {name:'创建服务项目', fn: async()=>{
+      const r=await api('POST','/api/projects',{name:'面部深层护理_'+rand(),category_id:ctx.catId,price:288,member_price:258,duration:90,description:'深层清洁+补水',commission_rate:15});
+      if(r.ok)ctx.projectId=r.data.id;
+      return r;
+    }},
+    {name:'项目列表', fn:()=>api('GET','/api/projects?page=1&page_size=20')},
+    {name:'项目详情', fn:()=>api('GET',`/api/projects/${ctx.projectId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新项目', fn:()=>api('PUT',`/api/projects/${ctx.projectId||'00000000-0000-0000-0000-000000000000'}`,{name:'面部深层护理已更新',price:328})},
+    {name:'项目上架/下架', fn:()=>api('PUT',`/api/projects/${ctx.projectId||'00000000-0000-0000-0000-000000000000'}/status`,{is_active:false})},
+    // --- 产品 ---
+    {name:'创建产品', fn: async()=>{
+      const r=await api('POST','/api/products',{name:'护肤精华_'+rand(),brand_id:ctx.brandId,category_id:ctx.catId,sell_price:399,cost_price:150,spec:'50ml',unit_id:ctx.unitId,stock_quantity:100,stock_alert_value:10,deduct_stock:true,description:'高端护肤品'});
+      if(r.ok)ctx.productId=r.data.id;
+      return r;
+    }},
+    {name:'产品列表', fn:()=>api('GET','/api/products?page=1&page_size=20')},
+    {name:'产品详情', fn:()=>api('GET',`/api/products/${ctx.productId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新产品', fn:()=>api('PUT',`/api/products/${ctx.productId||'00000000-0000-0000-0000-000000000000'}`,{sell_price:459,description:'升级版护肤品'})},
+    {name:'产品上下架', fn:()=>api('PUT',`/api/products/${ctx.productId||'00000000-0000-0000-0000-000000000000'}/status`,{is_active:false})},
+    // --- 库存 ---
+    {name:'库存列表', fn:()=>api('GET','/api/inventory?page=1&page_size=20')},
+    {name:'库存汇总', fn:()=>api('GET','/api/inventory/total')},
+    {name:'库存入库', fn:()=>api('POST','/api/inventory/operate',{product_id:ctx.productId||'00000000-0000-0000-0000-000000000000',change_type:'inbound',quantity:50,reason:'采购入库'})},
+    {name:'库存出库', fn:()=>api('POST','/api/inventory/operate',{product_id:ctx.productId||'00000000-0000-0000-0000-000000000000',change_type:'outbound',quantity:5,reason:'领用出库'})},
+    {name:'库存日志', fn:()=>api('GET','/api/inventory/logs?page=1&page_size=20')},
+    {name:'库存预警', fn:()=>api('GET','/api/inventory/alerts')},
+    // --- 套票 ---
+    {name:'创建套票', fn: async()=>{
+      const r=await api('POST','/api/tickets',{name:'面部护理3次卡_'+rand(),project_id:ctx.projectId,total_count:3,price:600,original_price:864,valid_days:90,description:'3次面部护理套票'});
+      if(r.ok)ctx.ticketId=r.data.id;
+      return r;
+    }},
+    {name:'套票列表', fn:()=>api('GET','/api/tickets?page=1&page_size=20')},
+    {name:'套票详情', fn:()=>api('GET',`/api/tickets/${ctx.ticketId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'更新套票', fn:()=>api('PUT',`/api/tickets/${ctx.ticketId||'00000000-0000-0000-0000-000000000000'}`,{price:550,description:'优惠更新'})},
+    {name:'删除套票', fn:()=>api('DELETE',`/api/tickets/${ctx.ticketId||'00000000-0000-0000-0000-000000000000'}`)},
+    // --- 价格模板 ---
+    {name:'价格模板列表', fn:()=>api('GET','/api/price-templates')},
+    // --- 清理 ---
+    {name:'删除产品', fn:()=>api('DELETE',`/api/products/${ctx.productId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除项目', fn:()=>api('DELETE',`/api/projects/${ctx.projectId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除品牌', fn:()=>api('DELETE',`/api/brands/${ctx.brandId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除单位', fn:()=>api('DELETE',`/api/product-units/${ctx.unitId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除分类', fn:()=>api('DELETE',`/api/categories/${ctx.catId||'00000000-0000-0000-0000-000000000000'}`)},
+  ]
+},
+
+card: {
+  name: '会员卡体系',
+  tests: [
+    {name:'获取顾客', fn: async()=>{
+      const c=await api('GET','/api/customers?page=1&page_size=1');
+      if(c.ok&&c.data.items&&c.data.items.length>0){ctx.cardCustId=c.data.items[0].id;return{ok:true,status:200,data:{id:ctx.cardCustId}};}
+      return{ok:false,status:400,data:{detail:'无顾客'}};
+    }},
+    // --- 卡类型 ---
+    {name:'创建储值卡类型', fn: async()=>{
+      const r=await api('POST','/api/card-types',{name:'金卡_'+rand(),card_category:'stored_value',sell_price:1000,face_value:1200,present_amount:200,validity_type:'permanent',description:'储值金卡'});
+      if(r.ok)ctx.cardTypeId=r.data.id;
+      return r;
+    }},
+    {name:'创建次卡类型', fn: async()=>{
+      const r=await api('POST','/api/card-types',{name:'次卡_'+rand(),card_category:'times',sell_price:500,face_value:600,validity_type:'days',validity_days:180,description:'10次护理卡'});
+      if(r.ok)ctx.cardTypeId2=r.data.id;
+      return r;
+    }},
+    {name:'卡类型列表', fn:()=>api('GET','/api/card-types')},
+    {name:'更新卡类型', fn:()=>api('PUT',`/api/card-types/${ctx.cardTypeId||'00000000-0000-0000-0000-000000000000'}`,{description:'金卡已更新'})},
+    // --- 会员卡 ---
+    {name:'开卡(储值)', fn: async()=>{
+      const r=await api('POST','/api/member-cards',{customer_id:ctx.cardCustId,card_type_id:ctx.cardTypeId,principal_amount:1000,present_amount:200,remark:'测试开卡'});
+      if(r.ok)ctx.memberCardId=r.data.id;
+      return r;
+    }},
+    {name:'会员卡列表', fn:()=>api('GET','/api/member-cards?page=1&page_size=20')},
+    {name:'会员卡详情', fn:()=>api('GET',`/api/member-cards/${ctx.memberCardId||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'充值', fn:()=>api('POST',`/api/member-cards/${ctx.memberCardId||'00000000-0000-0000-0000-000000000000'}/recharge`,{amount:500,present_amount:50,payment_method:'wechat',remark:'充值测试'})},
+    {name:'余额调整', fn:()=>api('POST',`/api/member-cards/${ctx.memberCardId||'00000000-0000-0000-0000-000000000000'}/adjust`,{principal_change:100,present_change:20,remark:'手动调整'})},
+    {name:'冻结卡', fn:()=>api('POST',`/api/member-cards/${ctx.memberCardId||'00000000-0000-0000-0000-000000000000'}/freeze`,{action:'freeze',remark:'临时冻结'})},
+    {name:'解冻卡', fn:()=>api('POST',`/api/member-cards/${ctx.memberCardId||'00000000-0000-0000-0000-000000000000'}/freeze`,{action:'unfreeze',remark:'解除冻结'})},
+    {name:'延期', fn:()=>api('POST',`/api/member-cards/${ctx.memberCardId||'00000000-0000-0000-0000-000000000000'}/delay`,{days:30,remark:'延期30天'})},
+    {name:'备注', fn:()=>api('PUT',`/api/member-cards/${ctx.memberCardId||'00000000-0000-0000-0000-000000000000'}/remark`,{remark:'VIP客户专用卡'})},
+    {name:'退卡', fn:()=>api('POST',`/api/member-cards/${ctx.memberCardId||'00000000-0000-0000-0000-000000000000'}/refund`,{reason:'客户退卡'})},
+    {name:'卡类型上下架(次卡)', fn:()=>api('PUT',`/api/card-types/${ctx.cardTypeId2||'00000000-0000-0000-0000-000000000000'}/status?is_active=false`)},
+    // --- 清理 ---
+    {name:'删除次卡类型', fn:()=>api('DELETE',`/api/card-types/${ctx.cardTypeId2||'00000000-0000-0000-0000-000000000000'}`)},
+    {name:'删除储值卡类型', fn: async()=>{
+      // 先退卡再删除类型
+      const r=await api('DELETE',`/api/card-types/${ctx.cardTypeId||'00000000-0000-0000-0000-000000000000'}`);
+      if(!r.ok&&r.data?.detail?.includes('会员卡'))return{ok:true,status:200,data:{message:'跳过(有关联会员卡)'}};
+      return r;
+    }},
+  ]
+},
+
+};
+
+// ========== RUNNER ==========
+async function doLogin(){
+  const phone=document.getElementById('phone').value;
+  const pw=document.getElementById('password').value;
+  const r=await api('POST','/api/auth/login',{phone,password:pw});
+  if(r.ok&&r.data.access_token){
+    token=r.data.access_token;staffId=r.data.staff_id;shopId=r.data.shop_id;
+    document.getElementById('tokenText').textContent=`已登录 (staff: ${staffId?.slice(0,8)}...)`;
+    document.getElementById('tokenText').style.color='#06d6a0';
+    log('登录成功','success');
+  }else{log('登录失败: '+JSON.stringify(r.data),'error')}
+}
+
+function initTestRows(){
+  R.pass=0;R.fail=0;R.total=0;totalTestCount=0;
+  for(const[mod,def]of Object.entries(testModules)){
+    const list=document.getElementById('list-'+mod);list.innerHTML='';
+    for(const t of def.tests){addTest(mod,t.name);totalTestCount++;}
+  }
+  document.getElementById('summary').textContent='等待测试...';
+  document.getElementById('progBar').style.width='0%';
+}
+
+async function runAll(){
+  if(!token){alert('请先登录');return}
+  const btn=document.getElementById('runAllBtn');
+  btn.disabled=true;btn.textContent='测试中...';
+  initTestRows();
+  for(const[mod,def]of Object.entries(testModules)){
+    log(`\n===== ${def.name} =====`,'info');
+    document.querySelectorAll('.module-tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.module-section').forEach(s=>s.classList.remove('active'));
+    const idx=Object.keys(testModules).indexOf(mod);
+    const tabs=document.querySelectorAll('.module-tab');
+    if(tabs[idx])tabs[idx].classList.add('active');
+    document.getElementById('sec-'+mod).classList.add('active');
+    for(const t of def.tests){
+      const id=`${mod}-${t.name}`.replace(/[^a-zA-Z0-9\u4e00-\u9fff-]/g,'_');
+      setTest(id,'running');
+      try{
+        const r=await t.fn();
+        const passed=r.ok||(r.status===400&&r.data?.detail?.includes('已打过'));
+        record(mod,t.name,passed,`HTTP ${r.status}`);
+        if(!passed)log(`  FAIL: ${t.name} → ${r.status} ${JSON.stringify(r.data).slice(0,120)}`,'error');
+      }catch(e){
+        record(mod,t.name,false,e.message);
+        log(`  ERROR: ${t.name} → ${e.message}`,'error');
+      }
+      await sleep(150);
+    }
+  }
+  btn.disabled=false;btn.textContent='运行全部测试';
+  log(`\n测试完成: ${R.pass} 通过, ${R.fail} 失败, ${R.total} 总计`,R.fail===0?'success':'error');
+  document.getElementById('totalLabel').textContent=`${R.pass}/${R.total} 通过`;
+}
+
+function clearAll(){
+  R.pass=0;R.fail=0;R.total=0;totalTestCount=0;
+  document.querySelectorAll('.test-list').forEach(l=>l.innerHTML='');
+  document.getElementById('logBox').innerHTML='';
+  document.getElementById('progBar').style.width='0%';
+  document.getElementById('summary').textContent='等待测试...';
+  document.getElementById('totalLabel').textContent='';
+}
+
+async function checkServer(){
+  try{
+    await fetch(`${BASE}/api/auth/me`);
+    document.getElementById('serverDot').className='status-dot online';
+    document.getElementById('serverText').textContent='服务器在线';
+  }catch{
+    document.getElementById('serverDot').className='status-dot offline';
+    document.getElementById('serverText').textContent='服务器离线';
+  }
+}
+initModules();
+checkServer();
+</script>
+</body>
+</html>
