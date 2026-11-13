@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>美容院SaaS - 业务场景测试</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f2f5;color:#333;font-size:13px}
+.container{max-width:1200px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin-bottom:4px;color:#1a1a2e}
+.subtitle{color:#666;font-size:13px;margin-bottom:16px}
+.card{background:#fff;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.status-bar{display:flex;gap:16px;padding:10px 14px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:8px;color:#fff;align-items:center;margin-bottom:16px}
+.status-bar input{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;padding:5px 10px;border-radius:4px;font-size:12px}
+.status-bar input::placeholder{color:rgba(255,255,255,.6)}
+.status-bar .btn{background:rgba(255,255,255,.25);color:#fff;border:1px solid rgba(255,255,255,.3)}
+.status-bar .btn:hover{background:rgba(255,255,255,.4)}
+.btn{display:inline-block;padding:6px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;transition:.2s}
+.btn-run{background:#10b981;color:#fff;font-size:15px;padding:10px 24px}
+.btn-run:hover{background:#059669}
+.btn-run:disabled{opacity:.5;cursor:not-allowed}
+.scenario{border:1px solid #e5e7eb;border-radius:10px;margin-bottom:14px;overflow:hidden}
+.scenario-header{display:flex;align-items:center;padding:12px 16px;cursor:pointer;gap:10px;background:#fafbfc;transition:.2s}
+.scenario-header:hover{background:#f3f4f6}
+.scenario-header .icon{font-size:20px}
+.scenario-header .title{flex:1;font-size:14px;font-weight:600;color:#1f2937}
+.scenario-header .badge{padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600}
+.badge-wait{background:#fef3c7;color:#92400e}
+.badge-running{background:#dbeafe;color:#1e40af}
+.badge-pass{background:#d1fae5;color:#065f46}
+.badge-fail{background:#fee2e2;color:#991b1b}
+.scenario-desc{padding:0 16px 8px;font-size:12px;color:#6b7280;line-height:1.6}
+.scenario-body{padding:0 16px 12px}
+.step{display:flex;align-items:center;padding:7px 10px;border-radius:6px;margin:3px 0;gap:8px;font-size:12px;transition:.15s}
+.step:hover{background:#f9fafb}
+.step .num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+.num-wait{background:#e5e7eb;color:#6b7280}
+.num-run{background:#3b82f6;color:#fff;animation:pulse 1s infinite}
+.num-pass{background:#10b981;color:#fff}
+.num-fail{background:#ef4444;color:#fff}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.step .name{flex:1;color:#374151}
+.step .detail{font-size:11px;color:#9ca3af;max-width:300px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step .check{font-size:11px;color:#10b981;font-weight:600;margin-left:4px}
+.step .check.fail{color:#ef4444}
+.progress{height:6px;background:#e5e7eb;border-radius:3px;margin:12px 0;overflow:hidden}
+.progress-bar{height:100%;background:linear-gradient(90deg,#10b981,#3b82f6);border-radius:3px;transition:width .4s}
+.summary-bar{display:flex;gap:20px;justify-content:center;padding:12px;font-size:15px;font-weight:600}
+.pass-text{color:#10b981}.fail-text{color:#ef4444}
+.log{background:#111827;color:#a5f3fc;padding:12px;border-radius:8px;font-family:'Cascadia Code',monospace;font-size:11px;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.5}
+.log .err{color:#fca5a5}.log .ok{color:#86efac}.log .info{color:#93c5fd}.log .assert{color:#fbbf24}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>美容院SaaS - 业务场景测试</h1>
+<p class="subtitle">端到端业务流验证：从顾客进店到业绩结算的完整闭环</p>
+
+<div class="status-bar">
+  <span id="serverStatus">● 检测中...</span>
+  <span>Token: <span id="tokenLabel" style="opacity:.7">未登录</span></span>
+  <div style="flex:1"></div>
+  <input id="phone" value="13800138000" style="width:110px" placeholder="手机号">
+  <input id="pwd" type="password" value="123456" style="width:70px" placeholder="密码">
+  <button class="btn" onclick="doLogin()">登录</button>
+</div>
+
+<div class="card">
+  <div style="display:flex;gap:10px;align-items:center">
+    <button class="btn btn-run" onclick="runAllScenarios()" id="runBtn">▶ 运行全部场景</button>
+    <button class="btn" style="background:#6b7280;color:#fff" onclick="resetAll()">重置</button>
+  </div>
+  <div class="progress"><div class="progress-bar" id="progBar" style="width:0%"></div></div>
+  <div class="summary-bar" id="summaryBar">等待运行...</div>
+</div>
+
+<div id="scenariosContainer"></div>
+
+<div class="card">
+  <h2 style="font-size:14px;margin-bottom:8px;color:#374151">运行日志</h2>
+  <div class="log" id="logBox"></div>
+</div>
+</div>
+
+<script>
+const BASE='';
+let token=null,staffId=null,shopId=null;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const today=new Date().toISOString().slice(0,10);
+const month=new Date().toISOString().slice(0,7);
+const rand=()=>Math.floor(Math.random()*90000+10000);
+
+function log(m,t='info'){const e=document.getElementById('logBox');e.innerHTML+=`<span class="${t}">[${new Date().toLocaleTimeString()}] ${m}</span>\n`;e.scrollTop=e.scrollHeight}
+async function api(method,path,data=null,retries=2){
+  const h={};if(token)h['Authorization']=`Bearer ${token}`;if(data)h['Content-Type']='application/json';
+  for(let a=0;a<=retries;a++){
+    try{const r=await fetch(`${BASE}${path}`,{method,headers:h,body:data?JSON.stringify(data):undefined});
+    const j=await r.json().catch(()=>({}));return{status:r.status,data:j,ok:r.ok}}
+    catch(e){if(a<retries){await sleep(500*(a+1));continue}return{status:0,data:{detail:e.message},ok:false}}
+  }
+}
+
+// ===== SCENARIO DEFINITIONS =====
+const scenarios = [
+{
+  id:'s1', icon:'🆕', title:'场景一：新客首次到店全流程',
+  desc:'模拟一位新顾客从进店登记 → 选择服务 → 预约 → 到店服务 → 收银结账的完整流程。验证顾客信息、订单状态、服务记录的关联性。',
+  ctx:{},
+  steps:[
+    {name:'1. 登记新顾客', fn:async(s)=>{
+      const r=await api('POST','/api/customers',{name:'场景测试顾客_'+rand(),phone:'139'+rand()+rand(),gender:'female',remark:'场景测试新客'});
+      if(r.ok){s.custId=r.data.id;s.custName=r.data.name;log(`✓ 新顾客: ${r.data.name} (${r.data.id.slice(0,8)}...)`,'ok')}
+      return r;
+    }, assert:(s,r)=>r.ok&&!!r.data.id, expect:'返回顾客ID'},
+    {name:'2. 创建服务分类', fn:async(s)=>{
+      const r=await api('POST','/api/categories',{name:'美容护理_'+rand(),category_type:'project',sort_order:1});
+      if(r.ok){s.catId=r.data.id;log(`✓ 分类: ${r.data.name}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'分类创建成功'},
+    {name:'3. 创建服务项目(面部深层护理)', fn:async(s)=>{
+      const r=await api('POST','/api/projects',{name:'面部深层护理_'+rand(),category_id:s.catId,price:388,member_price:328,duration:90,description:'深层清洁+补水+按摩',commission_rate:15});
+      if(r.ok){s.projectId=r.data.id;s.projectPrice=388;log(`✓ 项目: ¥${388} / 90分钟`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.price===388, expect:'项目价格=388'},
+    {name:'4. 顾客预约明天14:00', fn:async(s)=>{
+      const tmr=new Date(Date.now()+86400000).toISOString().slice(0,10);s.apptDate=tmr;
+      const r=await api('POST','/api/appointments',{customer_id:s.custId,staff_id:staffId,appointment_date:tmr,start_time:'14:00',duration:90,remark:'首次体验',source:'in-store'});
+      if(r.ok){s.apptId=r.data.id;log(`✓ 预约: ${tmr} 14:00 (${r.data.id.slice(0,8)}...)`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.status==='pending', expect:'预约状态=pending'},
+    {name:'5. 确认预约', fn:async(s)=>{
+      const r=await api('PUT',`/api/appointments/${s.apptId}/status`,{status:'confirmed'});
+      if(r.ok)log(`✓ 预约已确认`,'ok');return r;
+    }, assert:(s,r)=>r.ok&&r.data.status==='confirmed', expect:'状态→confirmed'},
+    {name:'6. 顾客到店签到', fn:async(s)=>{
+      const r=await api('PUT',`/api/appointments/${s.apptId}/status`,{status:'arrived'});
+      if(r.ok)log(`✓ 顾客已到店`,'ok');return r;
+    }, assert:(s,r)=>r.ok&&r.data.status==='arrived', expect:'状态→arrived'},
+    {name:'7. 收银开单(面部护理+现金支付)', fn:async(s)=>{
+      const r=await api('POST','/api/orders',{customer_id:s.custId,order_type:'service',
+        items:[{item_type:'project',item_id:s.projectId,item_name:'面部深层护理',quantity:1,unit_price:s.projectPrice,discount:100,amount:s.projectPrice,staff_id:staffId}],
+        payments:[{payment_method_name:'现金',amount:s.projectPrice}]});
+      if(r.ok){s.orderId=r.data.id;s.orderNo=r.data.order_no;log(`✓ 订单: ${r.data.order_no} ¥${r.data.total_amount} (${r.data.status})`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.total_amount===388, expect:'订单金额=388'},
+    {name:'8. 完成预约', fn:async(s)=>{
+      const r=await api('PUT',`/api/appointments/${s.apptId}/status`,{status:'completed'});
+      if(r.ok)log(`✓ 预约已完成`,'ok');return r;
+    }, assert:(s,r)=>r.ok&&r.data.status==='completed', expect:'状态→completed'},
+    {name:'9. 记录服务日志', fn:async(s)=>{
+      const r=await api('POST','/api/service-logs',{customer_id:s.custId,staff_id:staffId,service_date:new Date().toISOString(),duration:90,remark:'面部深层护理-首次体验良好'});
+      if(r.ok)log(`✓ 服务日志已记录`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'日志创建成功'},
+    {name:'10. 创建回访任务(3天后)', fn:async(s)=>{
+      const future=new Date(Date.now()+3*86400000).toISOString();
+      const r=await api('POST','/api/revisit-tasks',{customer_id:s.custId,staff_id:staffId,revisit_type:'post_service',planned_date:future,content:'首次体验回访',priority:'high'});
+      if(r.ok)log(`✓ 回访任务已创建`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'回访任务创建成功'},
+    {name:'11.【验证】查看订单详情', fn:async(s)=>{
+      const r=await api('GET',`/api/orders/${s.orderId}`);
+      if(r.ok){const d=r.data;log(`✓ 订单验证: 金额=${d.total_amount} 状态=${d.status} 品项=${d.items?.length||0} 支付=${d.payments?.length||0}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.total_amount===388&&r.data.items?.length===1&&r.data.payments?.length===1, expect:'金额388+1品项+1支付'},
+    {name:'12.【验证】查看顾客消费总额', fn:async(s)=>{
+      const r=await api('GET',`/api/customers/${s.custId}`);
+      if(r.ok){const d=r.data;log(`✓ 顾客验证: ${d.name} 消费=${d.total_consumption} 积分=${d.points}`,'ok');s.custConsumption=d.total_consumption}return r;
+    }, assert:(s,r)=>r.ok, expect:'顾客信息获取成功'},
+  ]
+},
+{
+  id:'s2', icon:'💳', title:'场景二：会员开卡充值+刷卡消费',
+  desc:'为顾客开通储值会员卡 → 充值1000元(赠送200) → 消费时刷卡支付 → 验证卡余额变化和交易流水。',
+  ctx:{},
+  steps:[
+    {name:'1. 获取测试顾客', fn:async(s)=>{
+      const r=await api('GET','/api/customers?page=1&page_size=1');
+      if(r.ok&&r.data.items?.length>0){s.custId=r.data.items[0].id;s.custName=r.data.items[0].name;log(`✓ 使用顾客: ${s.custName}`,'ok')}return{ok:r.ok&&r.data.items?.length>0,status:r.status,data:r.data};
+    }, assert:(s,r)=>r.ok, expect:'获取到顾客'},
+    {name:'2. 创建储值卡类型(金卡¥1000面值¥1200)', fn:async(s)=>{
+      const r=await api('POST','/api/card-types',{name:'测试金卡_'+rand(),card_category:'stored_value',sell_price:1000,face_value:1200,present_amount:200,validity_type:'permanent',description:'场景测试金卡'});
+      if(r.ok){s.cardTypeId=r.data.id;log(`✓ 卡类型: 售价¥1000 面值¥1200 赠¥200`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'卡类型创建成功'},
+    {name:'3. 为顾客开卡(本金¥1000)', fn:async(s)=>{
+      const r=await api('POST','/api/member-cards',{customer_id:s.custId,card_type_id:s.cardTypeId,principal_amount:1000,present_amount:200,remark:'场景测试开卡'});
+      if(r.ok){s.cardId=r.data.id;s.cardNo=r.data.card_no;s.balanceBefore=1200;log(`✓ 开卡: ${r.data.card_no} 本金¥${r.data.principal_balance} 赠金¥${r.data.present_balance}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.principal_balance===1000&&r.data.present_balance===200, expect:'本金1000+赠金200'},
+    {name:'4. 充值¥500(赠¥50)', fn:async(s)=>{
+      const r=await api('POST',`/api/member-cards/${s.cardId}/recharge`,{amount:500,present_amount:50,payment_method:'wechat',remark:'场景充值'});
+      if(r.ok){s.balanceAfter=parseFloat(r.data.principal_balance)+parseFloat(r.data.present_balance);log(`✓ 充值后: 本金¥${r.data.principal_balance} 赠金¥${r.data.present_balance} 总¥${s.balanceAfter}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&parseFloat(r.data.principal_balance)===1500&&parseFloat(r.data.present_balance)===250, expect:'本金1500+赠金250=1750'},
+    {name:'5. 收银开单(项目消费¥388 刷卡支付)', fn:async(s)=>{
+      const r=await api('POST','/api/orders',{customer_id:s.custId,order_type:'service',
+        items:[{item_type:'project',item_name:'面部深层护理',quantity:1,unit_price:388,discount:100,amount:388,staff_id:staffId}],
+        payments:[{payment_method_name:'会员卡',amount:388,card_id:s.cardId}]});
+      if(r.ok){s.orderId=r.data.id;log(`✓ 订单: ¥${r.data.total_amount} (${r.data.payments[0]?.payment_method_name})`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.total_amount===388, expect:'订单388元'},
+    {name:'6. 会员卡消费扣款¥388', fn:async(s)=>{
+      const r=await api('POST',`/api/member-cards/${s.cardId}/consume`,{amount:388,order_id:s.orderId,remark:'面部护理消费'});
+      if(r.ok){s.balanceFinal=parseFloat(r.data.principal_balance)+parseFloat(r.data.present_balance);log(`✓ 消费后: 本金¥${r.data.principal_balance} 赠金¥${r.data.present_balance} 总¥${s.balanceFinal}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&(parseFloat(r.data.principal_balance)+parseFloat(r.data.present_balance))===1362, expect:'余额1750-388=1362'},
+    {name:'7.【验证】卡详情余额', fn:async(s)=>{
+      const r=await api('GET',`/api/member-cards/${s.cardId}`);
+      if(r.ok){const total=parseFloat(r.data.principal_balance)+parseFloat(r.data.present_balance);log(`✓ 卡验证: ${r.data.card_no} 状态=${r.data.status} 余额=¥${total}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.status==='active', expect:'卡状态active'},
+    {name:'8. 再次充值¥200', fn:async(s)=>{
+      const r=await api('POST',`/api/member-cards/${s.cardId}/recharge`,{amount:200,present_amount:0,payment_method:'alipay',remark:'二次充值'});
+      if(r.ok)log(`✓ 二次充值后: 本金¥${r.data.principal_balance}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'充值成功'},
+    {name:'9. 手动余额调整(+¥10补差)', fn:async(s)=>{
+      const r=await api('POST',`/api/member-cards/${s.cardId}/adjust`,{principal_change:10,present_change:0,remark:'系统补差'});
+      if(r.ok)log(`✓ 调整后: 本金¥${r.data.principal_balance}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'调整成功'},
+  ]
+},
+{
+  id:'s3', icon:'💰', title:'场景三：技师服务+业绩提成结算',
+  desc:'创建提成规则 → 技师完成服务订单 → 生成提成记录 → 验证员工业绩数据和提成金额计算。',
+  ctx:{},
+  steps:[
+    {name:'1. 创建技师(高级美容师)', fn:async(s)=>{
+      const pos=await api('POST','/api/positions',{name:'高级美容师_'+rand(),sort_order:5});
+      if(!pos.ok)return pos;
+      const r=await api('POST','/api/staff',{name:'技师小美_'+rand(),phone:'139'+rand()+rand(),role:'staff',position_id:pos.data.id});
+      if(r.ok){s.techId=r.data.id;s.techName=r.data.name;log(`✓ 技师: ${r.data.name} (${r.data.id.slice(0,8)}...)`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'技师创建成功'},
+    {name:'2. 清理+创建服务提成规则(15%)', fn:async(s)=>{
+      const old=await api('GET','/api/commission/rules');
+      if(old.ok&&Array.isArray(old.data))for(const r of old.data)if(r.rule_type==='service')await api('DELETE',`/api/commission/rules/${r.id}`);
+      const r=await api('POST','/api/commission/rules',{name:'服务提成15%',rule_type:'service',commission_rate:15});
+      if(r.ok){s.ruleId=r.data.id;log(`✓ 提成规则: 服务类 15%`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'规则创建成功'},
+    {name:'3. 清理+创建销售提成规则(8%)', fn:async(s)=>{
+      const old=await api('GET','/api/commission/rules');
+      if(old.ok&&Array.isArray(old.data))for(const r of old.data)if(r.rule_type==='sales')await api('DELETE',`/api/commission/rules/${r.id}`);
+      const r=await api('POST','/api/commission/rules',{name:'销售提成8%',rule_type:'sales',commission_rate:8});
+      if(r.ok){s.salesRuleId=r.data.id;log(`✓ 销售提成: 8%`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'销售规则创建'},
+    {name:'4. 创建服务订单(¥500)', fn:async(s)=>{
+      const r=await api('POST','/api/orders',{order_type:'service',
+        items:[{item_type:'project',item_name:'全身SPA',quantity:1,unit_price:500,discount:100,amount:500,staff_id:s.techId}],
+        payments:[{payment_method_name:'微信支付',amount:500}]});
+      if(r.ok){s.orderId=r.data.id;s.orderAmount=500;log(`✓ 订单: ¥500 技师=${s.techName}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.total_amount===500, expect:'订单500元'},
+    {name:'5. 生成服务提成(500×15%=75)', fn:async(s)=>{
+      const r=await api('POST',`/api/commission/records?staff_id=${s.techId}&order_id=${s.orderId}&commission_type=service&base_amount=500`);
+      if(r.ok){s.commissionAmount=r.data.commission_amount;s.commissionRate=r.data.commission_rate;log(`✓ 提成: ¥${r.data.base_amount} × ${r.data.commission_rate}% = ¥${r.data.commission_amount}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.commission_amount===75&&r.data.commission_rate===15, expect:'提成=75元(15%)'},
+    {name:'6. 创建第二订单-产品销售(¥800)', fn:async(s)=>{
+      const r=await api('POST','/api/orders',{order_type:'product',
+        items:[{item_type:'product',item_name:'护肤套装',quantity:1,unit_price:800,discount:100,amount:800,staff_id:s.techId}],
+        payments:[{payment_method_name:'支付宝',amount:800}]});
+      if(r.ok){s.orderId2=r.data.id;log(`✓ 产品销售订单: ¥800`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'订单800元'},
+    {name:'7. 生成销售提成(800×8%=64)', fn:async(s)=>{
+      const r=await api('POST',`/api/commission/records?staff_id=${s.techId}&order_id=${s.orderId2}&commission_type=sales&base_amount=800`);
+      if(r.ok){s.salesCommission=r.data.commission_amount;log(`✓ 销售提成: ¥800 × ${r.data.commission_rate}% = ¥${r.data.commission_amount}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok&&r.data.commission_amount===64, expect:'提成=64元(8%)'},
+    {name:'8.【验证】提成记录列表', fn:async(s)=>{
+      const r=await api('GET',`/api/commission/records?month=${month}`);
+      if(r.ok&&Array.isArray(r.data)){const mine=r.data.filter(x=>x.staff_id===s.techId);log(`✓ 本月提成记录: ${mine.length}条 (技师${s.techName})`,'ok');
+        mine.forEach(x=>log(`  - ${x.commission_type}: ¥${x.base_amount}×${x.commission_rate}%=¥${x.commission_amount}`,'info'))}return{ok:r.ok,status:r.status,data:r.data};
+    }, assert:(s,r)=>r.ok, expect:'获取提成记录'},
+    {name:'9.【验证】计算提成汇总', fn:async(s)=>{
+      const r=await api('POST','/api/commission/calc-staff-commission',{staff_id:s.techId,commission_type:'service',base_amount:500});
+      if(r.ok)log(`✓ 提成计算验证: ¥${r.data.commission_amount} (规则:${r.data.rule_name})`,'ok');return r;
+    }, assert:(s,r)=>r.ok&&r.data.commission_amount===75, expect:'计算结果=75'},
+    {name:'10.【验证】员工业绩报表', fn:async(s)=>{
+      const r=await api('GET',`/api/report/staff-data/list?month=${month}`);
+      if(r.ok&&Array.isArray(r.data)){const mine=r.data.find(x=>x.staff_id===s.techId);
+        if(mine)log(`✓ 业绩: ${mine.staff_name} 营收=¥${mine.total_revenue} 服务=${mine.service_count}次 提成=¥${mine.total_commission}`,'ok');
+        else log('⚠ 该技师暂无业绩数据','assert')}
+      return{ok:r.ok,status:r.status,data:r.data};
+    }, assert:(s,r)=>r.ok, expect:'报表获取成功'},
+    {name:'11.【验证】技师积分', fn:async(s)=>{
+      const r=await api('GET',`/api/staff/${s.techId}/points`);
+      if(r.ok)log(`✓ 技师积分: ${r.data.points||0}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'积分查询成功'},
+  ]
+},
+{
+  id:'s4', icon:'🔄', title:'场景四：预约-服务-回访闭环',
+  desc:'顾客预约 → 到店服务 → 服务完成 → 创建回访任务 → 执行回访 → 记录回访结果。验证服务全生命周期数据关联。',
+  ctx:{},
+  steps:[
+    {name:'1. 获取顾客', fn:async(s)=>{
+      const r=await api('GET','/api/customers?page=1&page_size=1');
+      if(r.ok&&r.data.items?.length>0){s.custId=r.data.items[0].id;log(`✓ 顾客: ${r.data.items[0].name}`,'ok')}
+      return{ok:r.ok&&r.data.items?.length>0,status:r.status,data:r.data};
+    }, assert:(s,r)=>r.ok, expect:'获取顾客'},
+    {name:'2. 创建预约(明天10:00)', fn:async(s)=>{
+      const tmr=new Date(Date.now()+86400000).toISOString().slice(0,10);s.apptDate=tmr;
+      const r=await api('POST','/api/appointments',{customer_id:s.custId,staff_id:staffId,appointment_date:tmr,start_time:'10:00',duration:60,remark:'定期护理',source:'wechat'});
+      if(r.ok){s.apptId=r.data.id;log(`✓ 预约: ${tmr} 10:00`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'预约创建成功'},
+    {name:'3. 时间冲突检查', fn:async(s)=>{
+      const r=await api('POST','/api/appointments/check-conflict',{staff_id:staffId,appointment_date:s.apptDate,start_time:'10:00',duration:60,exclude_id:s.apptId});
+      if(r.ok)log(`✓ 冲突检查: has_conflict=${r.data.has_conflict}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'冲突检查通过'},
+    {name:'4. 确认+到店+完成', fn:async(s)=>{
+      await api('PUT',`/api/appointments/${s.apptId}/status`,{status:'confirmed'});
+      await api('PUT',`/api/appointments/${s.apptId}/status`,{status:'arrived'});
+      const r=await api('PUT',`/api/appointments/${s.apptId}/status`,{status:'completed'});
+      if(r.ok)log(`✓ 预约全流程: pending→confirmed→arrived→completed`,'ok');return r;
+    }, assert:(s,r)=>r.ok&&r.data.status==='completed', expect:'最终状态=completed'},
+    {name:'5. 下单(¥299)', fn:async(s)=>{
+      const r=await api('POST','/api/orders',{customer_id:s.custId,order_type:'service',
+        items:[{item_type:'project',item_name:'肩颈按摩',quantity:1,unit_price:299,discount:100,amount:299,staff_id:staffId}],
+        payments:[{payment_method_name:'微信',amount:299}]});
+      if(r.ok){s.orderId=r.data.id;log(`✓ 订单: ¥299`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'订单创建成功'},
+    {name:'6. 创建服务日志', fn:async(s)=>{
+      const r=await api('POST','/api/service-logs',{customer_id:s.custId,staff_id:staffId,service_date:new Date().toISOString(),duration:60,remark:'肩颈按摩-顾客反馈良好'});
+      if(r.ok){s.logId=r.data.id;log(`✓ 服务日志已记录`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'日志创建成功'},
+    {name:'7. 创建回访任务(3天后)', fn:async(s)=>{
+      const future=new Date(Date.now()+3*86400000).toISOString();
+      const r=await api('POST','/api/revisit-tasks',{customer_id:s.custId,staff_id:staffId,revisit_type:'post_service',planned_date:future,content:'肩颈护理回访',priority:'medium'});
+      if(r.ok){s.taskId=r.data.id;log(`✓ 回访任务: ${r.data.id.slice(0,8)}... 优先级=${r.data.priority}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'回访任务创建'},
+    {name:'8. 创建回访话术', fn:async(s)=>{
+      const r=await api('POST','/api/revisit-scripts',{title:'肩颈回访话术',category:'post_service',content:'您好，请问上次肩颈护理后感觉如何？有没有明显改善？'});
+      if(r.ok){s.scriptId=r.data.id;log(`✓ 话术: ${r.data.title}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'话术创建成功'},
+    {name:'9. 执行回访(模拟完成)', fn:async(s)=>{
+      const r=await api('PUT',`/api/revisit-tasks/${s.taskId}`,{status:'completed',content:'回访完成-顾客满意'});
+      if(r.ok)log(`✓ 回访完成: ${r.data.status}`,'ok');return r;
+    }, assert:(s,r)=>r.ok&&r.data.status==='completed', expect:'任务状态=completed'},
+    {name:'10. 记录回访结果', fn:async(s)=>{
+      const r=await api('POST','/api/revisit-records',{task_id:s.taskId,customer_id:s.custId,revisit_method:'phone',result:'visited',content:'顾客反馈良好，肩颈明显改善',next_plan:'建议2周后再次护理'});
+      if(r.ok)log(`✓ 回访记录: ${r.data.result} (${r.data.revisit_method})`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'回访记录创建'},
+    {name:'11.【验证】回访统计', fn:async(s)=>{
+      const r=await api('GET','/api/revisit-tasks/statistic');
+      if(r.ok)log(`✓ 回访统计: 总${r.data.total_tasks} 完成${r.data.completed_count} 完成率${r.data.completion_rate}%`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'统计数据获取'},
+  ]
+},
+{
+  id:'s5', icon:'📊', title:'场景五：门店经营数据汇总验证',
+  desc:'基于前面场景产生的订单、预约、充值数据，验证门店经营报表的数据准确性。',
+  ctx:{},
+  steps:[
+    {name:'1. 查看经营总览(本月)', fn:async(s)=>{
+      const r=await api('GET',`/api/report/business/overview?start_date=2026-01-01&end_date=2026-12-31`);
+      if(r.ok){s.revenue=r.data.total_revenue;s.orders=r.data.order_count;s.newCust=r.data.new_customers;
+        log(`✓ 经营总览: 营收¥${r.data.total_revenue} 订单${r.data.order_count}笔 新客${r.data.new_customers} 充值¥${r.data.recharge_amount}`,'ok')}return r;
+    }, assert:(s,r)=>r.ok, expect:'经营数据获取'},
+    {name:'2. 营收汇总报表', fn:async(s)=>{
+      const r=await api('GET',`/api/report/revenue/summary?start_date=2026-01-01&end_date=2026-12-31`);
+      if(r.ok)log(`✓ 营收汇总: ${JSON.stringify(r.data).slice(0,120)}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'营收数据获取'},
+    {name:'3. 营收明细', fn:async(s)=>{
+      const r=await api('GET',`/api/report/revenue/detail?start_date=2026-01-01&end_date=2026-12-31`);
+      if(r.ok)log(`✓ 营收明细: ${JSON.stringify(r.data).slice(0,120)}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'明细数据获取'},
+    {name:'4. 顾客报表', fn:async(s)=>{
+      const r=await api('GET',`/api/report/business/customer?start_date=2026-01-01&end_date=2026-12-31`);
+      if(r.ok)log(`✓ 顾客报表: ${JSON.stringify(r.data).slice(0,120)}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'顾客报表获取'},
+    {name:'5. 员工业绩报表', fn:async(s)=>{
+      const r=await api('GET',`/api/report/staff-performance?start_date=2026-01-01&end_date=2026-12-31`);
+      if(r.ok)log(`✓ 员工业绩: ${JSON.stringify(r.data).slice(0,120)}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'员工业绩获取'},
+    {name:'6. 卡耗报表', fn:async(s)=>{
+      const r=await api('GET',`/api/report/card-consumption?start_date=2026-01-01&end_date=2026-12-31`);
+      if(r.ok)log(`✓ 卡耗报表: ${JSON.stringify(r.data).slice(0,120)}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'卡耗数据获取'},
+    {name:'7. KPI预览', fn:async(s)=>{
+      const r=await api('GET','/api/report/business-preview/collect');
+      if(r.ok)log(`✓ KPI预览: ${JSON.stringify(r.data).slice(0,120)}`,'ok');return r;
+    }, assert:(s,r)=>r.ok, expect:'KPI数据获取'},
+    {name:'8. 本月员工业绩列表', fn:async(s)=>{
+      const r=await api('GET',`/api/report/staff-data/list?month=${month}`);
+      if(r.ok&&Array.isArray(r.data)){log(`✓ 本月业绩: ${r.data.length}名员工`,'ok');
+        r.data.slice(0,3).forEach(x=>log(`  - ${x.staff_name}: 营收¥${x.total_revenue} 服务${x.service_count}次 提成¥${x.total_commission}`,'info'))}
+      return{ok:r.ok,status:r.status,data:r.data};
+    }, assert:(s,r)=>r.ok, expect:'业绩列表获取'},
+  ]
+},
+];
+
+// ===== UI & RUNNER =====
+function renderScenarios(){
+  const c=document.getElementById('scenariosContainer');c.innerHTML='';
+  scenarios.forEach(sc=>{
+    const div=document.createElement('div');div.className='scenario';div.id='sc-'+sc.id;
+    div.innerHTML=`<div class="scenario-header" onclick="toggleScenario('${sc.id}')">
+      <span class="icon">${sc.icon}</span><span class="title">${sc.title}</span>
+      <span class="badge badge-wait" id="badge-${sc.id}">等待</span></div>
+      <div class="scenario-desc" id="desc-${sc.id}" style="display:none">${sc.desc}</div>
+      <div class="scenario-body" id="body-${sc.id}" style="display:none"></div>`;
+    c.appendChild(div);
+  });
+}
+function toggleScenario(id){
+  const desc=document.getElementById('desc-'+id);const body=document.getElementById('body-'+id);
+  const show=desc.style.display==='none';
+  desc.style.display=show?'block':'none';body.style.display=show?'block':'none';
+}
+function renderSteps(sc){
+  const body=document.getElementById('body-'+sc.id);body.innerHTML='';body.style.display='block';
+  document.getElementById('desc-'+sc.id).style.display='block';
+  sc.steps.forEach((step,i)=>{
+    const div=document.createElement('div');div.className='step';div.id=`step-${sc.id}-${i}`;
+    div.innerHTML=`<span class="num num-wait">${i+1}</span><span class="name">${step.name}</span><span class="detail" id="detail-${sc.id}-${i}"></span>`;
+    body.appendChild(div);
+  });
+}
+function setStep(sc,i,status,detail='',checkResult=''){
+  const row=document.getElementById(`step-${sc.id}-${i}`);if(!row)return;
+  row.querySelector('.num').className=`num num-${status}`;
+  const d=document.getElementById(`detail-${sc.id}-${i}`);
+  if(detail)d.textContent=detail;
+  if(checkResult){const sp=document.createElement('span');sp.className='check'+(checkResult==='pass'?'':' fail');sp.textContent=checkResult==='pass'?' ✓断言通过':' ✗断言失败';d.appendChild(sp)}
+}
+function setBadge(sc,status,text){
+  const b=document.getElementById('badge-'+sc.id);b.className=`badge badge-${status}`;b.textContent=text;
+}
+
+async function doLogin(){
+  const r=await api('POST','/api/auth/login',{phone:document.getElementById('phone').value,password:document.getElementById('pwd').value});
+  if(r.ok&&r.data.access_token){token=r.data.access_token;staffId=r.data.staff_id;shopId=r.data.shop_id;
+    document.getElementById('tokenLabel').textContent=`已登录(${staffId?.slice(0,8)}...)`;
+    document.getElementById('serverStatus').innerHTML='● 在线';log('登录成功','ok');
+  }else{log('登录失败','err')}
+}
+
+async function runAllScenarios(){
+  if(!token){alert('请先登录');return}
+  const btn=document.getElementById('runBtn');btn.disabled=true;btn.textContent='测试中...';
+  let totalPass=0,totalFail=0,totalSteps=0;
+  scenarios.forEach(sc=>{totalSteps+=sc.steps.length;renderSteps(sc);setBadge(sc,'running','运行中...')});
+  let doneSteps=0;
+
+  for(const sc of scenarios){
+    log(`\n${'═'.repeat(50)}\n${sc.icon} ${sc.title}\n${'═'.repeat(50)}`,'info');
+    let scPass=0,scFail=0;
+    const ctx=sc.ctx; // reset context
+    for(let i=0;i<sc.steps.length;i++){
+      const step=sc.steps[i];
+      setStep(sc,i,'run');
+      try{
+        const r=await step.fn(ctx);
+        const httpOk=r.ok||(r.status===400&&r.data?.detail?.includes('已打过'));
+        let assertOk=true;
+        if(step.assert){try{assertOk=step.assert(ctx,r)}catch(e){assertOk=false}}
+        const passed=httpOk&&assertOk;
+        if(passed){scPass++;totalPass++;setStep(sc,i,'pass',`HTTP ${r.status}`,assertOk?'pass':'fail');
+          if(!assertOk)log(`  ⚠ 断言失败: ${step.expect}`,'assert');
+        }else{scFail++;totalFail++;setStep(sc,i,'fail',`HTTP ${r.status}`,assertOk?'pass':'fail');
+          log(`  ✗ FAIL: ${step.name} → ${r.status} ${JSON.stringify(r.data).slice(0,100)}`,'err');
+          if(!assertOk)log(`  ⚠ 断言: 期望${step.expect}`,'assert');
+        }
+      }catch(e){scFail++;totalFail++;setStep(sc,i,'fail',e.message);log(`  ✗ ERROR: ${step.name} → ${e.message}`,'err')}
+      doneSteps++;
+      document.getElementById('progBar').style.width=(doneSteps/totalSteps*100)+'%';
+      await sleep(100);
+    }
+    const scResult=scFail===0?'pass':'fail';
+    setBadge(sc,scResult,`${scPass}/${sc.steps.length} ${scFail===0?'通过':'有失败'}`);
+    log(`\n→ ${sc.title}: ${scPass}通过 ${scFail}失败`,scFail===0?'ok':'err');
+  }
+  btn.disabled=false;btn.textContent='▶ 运行全部场景';
+  document.getElementById('summaryBar').innerHTML=`<span class="pass-text">${totalPass} 通过</span> / <span class="fail-text">${totalFail} 失败</span> / ${totalSteps} 总计`;
+  log(`\n${'═'.repeat(50)}\n全部场景完成: ${totalPass}通过, ${totalFail}失败, ${totalSteps}总计`,totalFail===0?'ok':'err');
+}
+
+function resetAll(){
+  scenarios.forEach(sc=>{const body=document.getElementById('body-'+sc.id);if(body)body.innerHTML='';
+    const desc=document.getElementById('desc-'+sc.id);if(desc)desc.style.display='none';
+    setBadge(sc,'wait','等待')});
+  document.getElementById('progBar').style.width='0%';
+  document.getElementById('summaryBar').textContent='等待运行...';
+  document.getElementById('logBox').innerHTML='';
+}
+
+async function checkServer(){
+  try{await fetch(`${BASE}/api/auth/me`);document.getElementById('serverStatus').innerHTML='● 在线';
+  }catch{document.getElementById('serverStatus').innerHTML='● 离线'}
+}
+renderScenarios();checkServer();
+</script>
+</body>
+</html>
